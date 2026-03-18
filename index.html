@@ -27,28 +27,64 @@
     </div>
 
     <script>
-        let audioContext;
-        let recorder;
-        let chunks = [];
+       let audioContext;
+let recorder;
+let isRecording = false;
 
-        // 模拟与控制端的互通 (实际需配合后端的 WebSocket 或轮询)
-        document.getElementById('initBtn').onclick = async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-                document.getElementById('status').innerText = "✅ 监听中... 等待控制端信号";
-                
-                // 这里预留接收控制端指令的逻辑
-                window.listenForCommand(); 
-            } catch (err) {
-                alert("请允许麦克风访问: " + err);
-            }
-        };
+// 1. 注册设备坐标
+async function register() {
+    const data = {
+        x: document.getElementById('posX').value,
+        y: document.getElementById('posY').value,
+        z: document.getElementById('posZ').value
+    };
+    await fetch('/register', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+}
 
-        window.listenForCommand = function() {
-            // 此处应为从服务器获取“开始采集”指令的逻辑
-            console.log("正在轮询控制端指令...");
-        };
+// 2. 轮询指令
+async function pollCommand() {
+    try {
+        const res = await fetch('/poll');
+        const cmd = await res.json();
+        
+        if (cmd.action === "record" && !isRecording) {
+            startRecording(cmd.duration);
+        }
+    } catch (e) { console.error("轮询失败", e); }
+}
+
+async function startRecording(duration) {
+    isRecording = true;
+    document.getElementById('status').innerText = "🔴 正在采集音频...";
+    
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mediaRecorder = new MediaRecorder(stream);
+    const chunks = [];
+
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: 'audio/wav' });
+        const formData = new FormData();
+        formData.append('file', blob);
+        
+        await fetch('/upload', { method: 'POST', body: formData });
+        document.getElementById('status').innerText = "✅ 上传完成，等待下一轮";
+        isRecording = false;
+    };
+
+    mediaRecorder.start();
+    setTimeout(() => mediaRecorder.stop(), duration * 1000);
+}
+
+document.getElementById('initBtn').onclick = () => {
+    register();
+    setInterval(pollCommand, 1000); // 每秒检查一次有没有发射指令
+    document.getElementById('status').innerText = "📡 已就绪，监听指令中...";
+};
     </script>
 </body>
 </html>
