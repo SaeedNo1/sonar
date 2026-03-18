@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>声呐采集节点</title>
+    <style>
+        body { background: #000; color: #0f0; font-family: monospace; padding: 20px; }
+        .card { border: 1px solid #0f0; padding: 15px; margin-bottom: 10px; }
+        input { background: #111; color: #0f0; border: 1px solid #0f0; width: 60px; }
+        button { background: #0f0; color: #000; border: none; padding: 10px; width: 100%; cursor: pointer; }
+        #status { color: #ff0; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h2>📡 阵列节点</h2>
+    <div class="card">
+        <p>设备坐标 (相对中心 mm):</p>
+        东西(X): <input type="number" id="posX" value="0"> <br>
+        南北(Y): <input type="number" id="posY" value="500"> <br>
+        上下(Z): <input type="number" id="posZ" value="0">
+    </div>
+
+    <div class="card">
+        <button id="initBtn">1. 激活麦克风</button>
+        <p id="status">等待授权...</p>
+    </div>
+
+    <script>
+        let audioContext;
+        let recorder;
+        let chunks = [];
+
+        // 模拟与控制端的互通 (实际需配合后端的 WebSocket 或轮询)
+        document.getElementById('initBtn').onclick = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+                document.getElementById('status').innerText = "✅ 监听中... 等待控制端信号";
+                
+                // 这里预留接收控制端指令的逻辑
+                window.listenForCommand(); 
+            } catch (err) {
+                alert("请允许麦克风访问: " + err);
+            }
+        };
+
+        window.listenForCommand = function() {
+            // 此处应为从服务器获取“开始采集”指令的逻辑
+            console.log("正在轮询控制端指令...");
+        };
+    </script>
+</body>
+</html>
