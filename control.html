@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>声呐阵列控制中心</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; background: #050505; color: #0f0; font-family: sans-serif; display: flex; }
+        #ui-panel { width: 350px; padding: 20px; border-right: 1px solid #0f0; z-index: 10; }
+        #viewport { flex-grow: 1; height: 100vh; }
+        .control-group { margin-bottom: 20px; border: 1px solid #333; padding: 10px; }
+        select, input { background: #000; color: #0f0; border: 1px solid #0f0; margin: 5px 0; width: 100%; }
+        button { background: #0f0; color: #000; width: 100%; padding: 10px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="ui-panel">
+    <h2>🛰️ 控制中心</h2>
+    
+    <div class="control-group">
+        <label>扫描模式</label>
+        <select id="mode">
+            <option value="contour">环境全景轮廓 (反射)</option>
+            <option value="tomography">声学断层扫描 (内部)</option>
+            <option value="diffraction">衍射成像 (高精中心)</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label>Chirp 频率 (Hz)</label>
+        <input type="number" id="f_start" value="18000"> 到 
+        <input type="number" id="f_end" value="20000">
+        <label>采集时长 (s)</label>
+        <input type="number" id="duration" value="5">
+    </div>
+
+    <div class="control-group">
+        <label>添加/修改节点坐标 (mm)</label>
+        X: <input type="number" id="newX" value="0">
+        Y: <input type="number" id="newY" value="0">
+        Z: <input type="number" id="newZ" value="0">
+        <button onclick="addNode()">更新 3D 视图</button>
+    </div>
+
+    <button id="emitBtn" style="background: #f00; color: #fff;">🚀 发射 CHIRP 并启动采集</button>
+</div>
+
+<div id="viewport"></div>
+
+<script>
+    // --- 3D 监视器逻辑 ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth - 350, window.innerHeight);
+    document.getElementById('viewport').appendChild(renderer.domElement);
+
+    // 辅助线：坐标轴 (红:东, 绿:上下, 蓝:南)
+    const axesHelper = new THREE.AxesHelper(1000);
+    scene.add(axesHelper);
+    
+    // 网格地平面
+    const gridHelper = new THREE.GridHelper(2000, 20);
+    scene.add(gridHelper);
+
+    // 绘制“电脑发射源” (中心点)
+    const pcGeo = new THREE.BoxGeometry(100, 50, 100);
+    const pcMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
+    const pc = new THREE.Mesh(pcGeo, pcMat);
+    scene.add(pc);
+
+    camera.position.set(1500, 1500, 1500);
+    camera.lookAt(0, 0, 0);
+
+    const nodes = [];
+
+    function addNode() {
+        const x = document.getElementById('newX').value;
+        const y = document.getElementById('newY').value;
+        const z = document.getElementById('newZ').value;
+        
+        // 在 3D 空间创建一个代表手机的小方块
+        const nodeGeo = new THREE.SphereGeometry(30);
+        const nodeMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const node = new THREE.Mesh(nodeGeo, nodeMat);
+        node.position.set(x, z, -y); // 坐标系映射：三维 Y 为上下，南北对应 Z
+        scene.add(node);
+        nodes.push(node);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    // --- 音频发射逻辑 ---
+   // 修改 emitBtn 的逻辑
+document.getElementById('emitBtn').onclick = async () => {
+    const params = {
+        mode: document.getElementById('mode').value,
+        f_start: parseInt(document.getElementById('f_start').value),
+        f_end: parseInt(document.getElementById('f_end').value),
+        duration: parseInt(document.getElementById('duration').value)
+    };
+
+    // 1. 发送指令给服务器
+    const response = await fetch('/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+    });
+
+    const result = await response.json();
+    if(result.status === "triggered") {
+        console.log("指令已下发至云端...");
+        // 2. 本地延迟 1 秒后发射 Chirp 信号
+        playChirpLocal(params.f_start, params.f_end, 0.1); 
+    }
+};
+
+function playChirpLocal(f0, f1, dur) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.type = 'sine'; // 虽然是扫频，但 WebAudio 用 sine 模拟 Chirp 最稳
+    osc.frequency.setValueAtTime(f0, ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(f1, ctx.currentTime + dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+    console.log("🔊 Chirp 已发射");
+}
+</script>
+</body>
+</html>
